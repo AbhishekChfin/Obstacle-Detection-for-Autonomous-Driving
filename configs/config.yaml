@@ -1,0 +1,136 @@
+# ============================================================================
+# Multi-Model Obstacle Detection Configuration (Waymo Open Dataset)
+# ============================================================================
+# Encompasses all 4 models: Mask R-CNN, DETR, Deformable DETR, DeepLabv3+
+# ============================================================================
+
+# --- Dataset Paths & Split ---
+data:
+  img_parquet: "dataset/front_camera_images_2sec.parquet"
+  box_parquet: "dataset/front_camera_boxes_matched.parquet"
+  # Segment-based train/val split (80% train / 20% validation)
+  train_ratio: 0.8
+  split_seed: 42
+
+# --- Image Preprocessing ---
+image:
+  # Resolution from the paper (Section 3.5: 1280 x 768)
+  resize_width: 1280
+  resize_height: 768
+  # Alternative compact resolution for strict Mac memory limits: (960, 640) or (640, 384)
+  low_memory_width: 960
+  low_memory_height: 640
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+# --- Class Definitions ---
+classes:
+  num_classes: 4  # 0: background, 1: vehicle, 2: pedestrian, 3: cyclist
+  names:
+    0: "background"
+    1: "vehicle"
+    2: "pedestrian"
+    3: "cyclist"
+
+# --- Model 1: Mask R-CNN (Instance Segmentation) ---
+mask_rcnn:
+  backbone: "resnet50"
+  pretrained_coco: true
+  freeze_backbone_up_to: "layer2"
+  rpn_anchor_scales: [32, 64, 128, 256, 512]
+  rpn_aspect_ratios: [0.5, 1.0, 2.0]
+  box_score_thresh: 0.05
+  box_nms_thresh: 0.5
+  box_detections_per_img: 100
+  # Optimization
+  lr: 0.005
+  momentum: 0.9
+  weight_decay: 0.0001
+  lr_decay_epochs: [8, 11]
+  epochs: 12
+
+# --- Model 2: DETR (Detection Transformer) ---
+detr:
+  backbone: "resnet50"
+  hidden_dim: 256
+  nheads: 8
+  num_encoder_layers: 6
+  num_decoder_layers: 6
+  dim_feedforward: 2048
+  num_queries: 100
+  dropout: 0.1
+  # Loss weights (Section 3.2: lambda_cls=1, lambda_bbox=5, lambda_giou=2)
+  cost_class: 1.0
+  cost_bbox: 5.0
+  cost_giou: 2.0
+  loss_class: 1.0
+  loss_bbox: 5.0
+  loss_giou: 2.0
+  eos_coef: 0.1  # Relative weight for no-object class
+  # Optimization
+  lr_transformer: 0.0001
+  lr_backbone: 0.00001
+  weight_decay: 0.0001
+  epochs: 75
+
+# --- Model 3: Deformable DETR (Multi-Scale Attention) ---
+deformable_detr:
+  backbone: "resnet50"
+  hidden_dim: 256
+  nheads: 8
+  num_encoder_layers: 6
+  num_decoder_layers: 6
+  dim_feedforward: 2048
+  num_queries: 300
+  num_feature_levels: 4
+  num_points: 4
+  cost_class: 1.0
+  cost_bbox: 5.0
+  cost_giou: 2.0
+  lr_transformer: 0.0001
+  lr_backbone: 0.00001
+  weight_decay: 0.0001
+  epochs: 80
+
+# --- Model 4: DeepLabv3+ (Semantic Segmentation) ---
+deeplab:
+  backbone: "resnet50"
+  aspp_rates: [6, 12, 18]
+  aspp_out_channels: 256
+  low_level_channels: 48
+  lr: 0.0001
+  weight_decay: 0.0001
+  epochs: 30
+
+# --- Shared Training Settings ---
+training:
+  batch_size: 2
+  num_workers: 0  # 0 recommended on macOS
+  gradient_accumulation_steps: 4
+  use_amp: false
+  max_grad_norm: 10.0
+  save_every_n_epochs: 2
+  checkpoint_dir: "multi_model_detection/checkpoints"
+  resume_from: null
+  patience: 5
+
+# --- Adverse Weather & Imaging Perturbations (Section 3.5 & Table 2/3) ---
+robustness:
+  gaussian_noise_std: 0.05
+  salt_pepper_amount: 0.02
+  blur_radius: 3
+  brightness_down_factor: 0.70  # -30%
+  brightness_up_factor: 1.30    # +30%
+  contrast_low_factor: 0.70     # x0.7
+  contrast_high_factor: 1.30    # x1.3
+  fog_opacity: 0.40
+  rain_num_streaks: 400
+  jpeg_quality: 30
+
+# --- Logging & Compute Device ---
+logging:
+  log_dir: "multi_model_detection/logs"
+  log_every_n_steps: 25
+
+device:
+  preferred: "auto"  # auto picks mps (Apple Silicon) -> cuda -> cpu
